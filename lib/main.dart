@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:html' as html;
-import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/foundation.dart';
 
@@ -600,6 +599,7 @@ class _SongsListPageState extends State<SongsListPage> {
                 final actualIndex =
                     (currentPage - 1) * itemsPerPage + index + 1;
                 return SongCard(
+                  key: ValueKey(paginatedSongs[index].songId), // or unique URL
                   song: paginatedSongs[index],
                   index: actualIndex,
                 );
@@ -680,6 +680,7 @@ class SongCard extends StatefulWidget {
 
 class _SongCardState extends State<SongCard> {
   html.AudioElement? _audioElement;
+  static html.AudioElement? _currentlyPlaying;
   bool isPlaying = false;
   bool showVolumeSlider = false;
   Duration duration = Duration.zero;
@@ -735,6 +736,9 @@ class _SongCardState extends State<SongCard> {
 
   @override
   void dispose() {
+    if (_currentlyPlaying == _audioElement) {
+      _currentlyPlaying = null;
+    }
     _audioElement?.pause();
     _audioElement = null;
     super.dispose();
@@ -747,18 +751,15 @@ class _SongCardState extends State<SongCard> {
       if (isPlaying) {
         _audioElement!.pause();
       } else {
+        if (_currentlyPlaying != null && _currentlyPlaying != _audioElement) {
+          _currentlyPlaying!.pause();
+        }
+
         _audioElement!.play();
+        _currentlyPlaying = _audioElement;
       }
     } catch (e) {
-      print('Error playing audio: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error playing audio: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      debugPrint('Error playing audio: $e');
     }
   }
 
