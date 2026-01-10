@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
+import 'package:flutter/foundation.dart';
 
 void main() {
   runApp(const DevotionalSongsApp());
@@ -683,12 +685,16 @@ class _SongCardState extends State<SongCard> {
   Duration duration = Duration.zero;
   Duration position = Duration.zero;
   double volume = 1.0; // 0.0 to 1.0
+  bool _isSoundCloud(String url) {
+    return url.contains('soundcloud.com');
+  }
 
   @override
   void initState() {
     super.initState();
 
-    if (widget.song.audioLink.isNotEmpty) {
+    if (widget.song.audioLink.isNotEmpty &&
+        !_isSoundCloud(widget.song.audioLink.first)) {
       _audioElement = html.AudioElement(widget.song.audioLink.first);
       _audioElement!.volume = volume;
 
@@ -709,19 +715,11 @@ class _SongCardState extends State<SongCard> {
       });
 
       _audioElement!.onPlay.listen((_) {
-        if (mounted) {
-          setState(() {
-            isPlaying = true;
-          });
-        }
+        if (mounted) setState(() => isPlaying = true);
       });
 
       _audioElement!.onPause.listen((_) {
-        if (mounted) {
-          setState(() {
-            isPlaying = false;
-          });
-        }
+        if (mounted) setState(() => isPlaying = false);
       });
 
       _audioElement!.onEnded.listen((_) {
@@ -931,119 +929,9 @@ class _SongCardState extends State<SongCard> {
 
                   // Audio Player
                   if (widget.song.audioLink.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  isPlaying ? Icons.pause : Icons.play_arrow,
-                                  color: Colors.blue[700],
-                                ),
-                                onPressed: _togglePlayPause,
-                              ),
-                              Text(
-                                _formatDuration(position),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              Expanded(
-                                child: Slider(
-                                  value: position.inSeconds.toDouble(),
-                                  max: duration.inSeconds.toDouble() > 0
-                                      ? duration.inSeconds.toDouble()
-                                      : 1.0,
-                                  onChanged: _seekTo,
-                                  activeColor: Colors.blue[700],
-                                  inactiveColor: Colors.grey[400],
-                                ),
-                              ),
-                              Text(
-                                _formatDuration(duration),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                              // Volume button that toggles slider
-                              IconButton(
-                                icon: Icon(
-                                  _getVolumeIcon(),
-                                  color: Colors.grey[700],
-                                  size: 20,
-                                ),
-                                tooltip: 'Volume',
-                                onPressed: () {
-                                  setState(() {
-                                    showVolumeSlider = !showVolumeSlider;
-                                  });
-                                },
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.open_in_new,
-                                  color: Colors.grey[700],
-                                  size: 20,
-                                ),
-                                tooltip: 'Open in new tab',
-                                onPressed: _openInNewTab,
-                              ),
-                            ],
-                          ),
-                          // Volume slider row (shown when toggled)
-                          if (showVolumeSlider)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.volume_down,
-                                    size: 16,
-                                    color: Colors.grey[700],
-                                  ),
-                                  Expanded(
-                                    child: Slider(
-                                      value: volume,
-                                      min: 0.0,
-                                      max: 1.0,
-                                      divisions: 20,
-                                      label: '${(volume * 100).round()}%',
-                                      onChanged: _setVolume,
-                                      activeColor: Colors.blue[700],
-                                      inactiveColor: Colors.grey[400],
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.volume_up,
-                                    size: 16,
-                                    color: Colors.grey[700],
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '${(volume * 100).round()}%',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[700],
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+                    _isSoundCloud(widget.song.audioLink.first)
+                        ? _buildSoundCloudPlayer(widget.song.audioLink.first)
+                        : _buildNativeAudioPlayer(),
                 ],
               ),
             ),
@@ -1051,5 +939,122 @@ class _SongCardState extends State<SongCard> {
         ),
       ),
     );
+  }
+
+  Widget _buildNativeAudioPlayer() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  isPlaying ? Icons.pause : Icons.play_arrow,
+                  color: Colors.blue[700],
+                ),
+                onPressed: _togglePlayPause,
+              ),
+              Text(
+                _formatDuration(position),
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              Expanded(
+                child: Slider(
+                  value: position.inSeconds.toDouble(),
+                  max: duration.inSeconds.toDouble() > 0
+                      ? duration.inSeconds.toDouble()
+                      : 1.0,
+                  onChanged: _seekTo,
+                  activeColor: Colors.blue[700],
+                  inactiveColor: Colors.grey[400],
+                ),
+              ),
+              Text(
+                _formatDuration(duration),
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              // Volume button that toggles slider
+              IconButton(
+                icon: Icon(_getVolumeIcon(), color: Colors.grey[700], size: 20),
+                tooltip: 'Volume',
+                onPressed: () {
+                  setState(() {
+                    showVolumeSlider = !showVolumeSlider;
+                  });
+                },
+              ),
+              IconButton(
+                icon: Icon(
+                  Icons.open_in_new,
+                  color: Colors.grey[700],
+                  size: 20,
+                ),
+                tooltip: 'Open in new tab',
+                onPressed: _openInNewTab,
+              ),
+            ],
+          ),
+          // Volume slider row (shown when toggled)
+          if (showVolumeSlider)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.volume_down, size: 16, color: Colors.grey[700]),
+                  Expanded(
+                    child: Slider(
+                      value: volume,
+                      min: 0.0,
+                      max: 1.0,
+                      divisions: 20,
+                      label: '${(volume * 100).round()}%',
+                      onChanged: _setVolume,
+                      activeColor: Colors.blue[700],
+                      inactiveColor: Colors.grey[400],
+                    ),
+                  ),
+                  Icon(Icons.volume_up, size: 16, color: Colors.grey[700]),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(volume * 100).round()}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSoundCloudPlayer(String url) {
+    final embedUrl =
+        'https://w.soundcloud.com/player/?url=${Uri.encodeComponent(url)}';
+
+    final viewType = 'soundcloud-${widget.index}';
+
+    if (kIsWeb) {
+      // ignore: undefined_prefixed_name
+      ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
+        final iframe = html.IFrameElement()
+          ..src = embedUrl
+          ..style.border = 'none'
+          ..width = '100%'
+          ..height = '120';
+
+        return iframe;
+      });
+    }
+
+    return SizedBox(height: 120, child: HtmlElementView(viewType: viewType));
   }
 }
