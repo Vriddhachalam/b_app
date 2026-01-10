@@ -2,7 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
-import 'package:audioplayers/audioplayers.dart';
+import 'dart:html' as html;
+import 'dart:ui' as ui;
 
 void main() {
   runApp(const DevotionalSongsApp());
@@ -513,72 +514,79 @@ class SongCard extends StatefulWidget {
 }
 
 class _SongCardState extends State<SongCard> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  html.AudioElement? _audioElement;
   bool isPlaying = false;
+  bool showVolumeSlider = false;
   Duration duration = Duration.zero;
   Duration position = Duration.zero;
+  double volume = 1.0; // 0.0 to 1.0
 
   @override
   void initState() {
     super.initState();
 
-    // Set audio player mode for better web compatibility
-    _audioPlayer.setReleaseMode(ReleaseMode.stop);
+    if (widget.song.audioLink.isNotEmpty) {
+      _audioElement = html.AudioElement(widget.song.audioLink.first);
+      _audioElement!.volume = volume;
 
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      if (mounted) {
-        setState(() {
-          isPlaying = state == PlayerState.playing;
-        });
-      }
-    });
+      _audioElement!.onLoadedMetadata.listen((_) {
+        if (mounted) {
+          setState(() {
+            duration = Duration(seconds: _audioElement!.duration.toInt());
+          });
+        }
+      });
 
-    _audioPlayer.onDurationChanged.listen((newDuration) {
-      if (mounted) {
-        setState(() {
-          duration = newDuration;
-        });
-      }
-    });
+      _audioElement!.onTimeUpdate.listen((_) {
+        if (mounted) {
+          setState(() {
+            position = Duration(seconds: _audioElement!.currentTime.toInt());
+          });
+        }
+      });
 
-    _audioPlayer.onPositionChanged.listen((newPosition) {
-      if (mounted) {
-        setState(() {
-          position = newPosition;
-        });
-      }
-    });
+      _audioElement!.onPlay.listen((_) {
+        if (mounted) {
+          setState(() {
+            isPlaying = true;
+          });
+        }
+      });
 
-    _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() {
-          isPlaying = false;
-          position = Duration.zero;
-        });
-      }
-    });
+      _audioElement!.onPause.listen((_) {
+        if (mounted) {
+          setState(() {
+            isPlaying = false;
+          });
+        }
+      });
+
+      _audioElement!.onEnded.listen((_) {
+        if (mounted) {
+          setState(() {
+            isPlaying = false;
+            position = Duration.zero;
+          });
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    _audioElement?.pause();
+    _audioElement = null;
     super.dispose();
   }
 
-  Future<void> _togglePlayPause() async {
-    if (widget.song.audioLink.isEmpty) return;
+  void _togglePlayPause() {
+    if (_audioElement == null) return;
 
     try {
       if (isPlaying) {
-        await _audioPlayer.pause();
+        _audioElement!.pause();
       } else {
-        // Stop any previous playback first
-        await _audioPlayer.stop();
-        // Play the audio from URL
-        final audioUrl = widget.song.audioLink.first;
-        print('Attempting to play: $audioUrl'); // Debug log
-
-        await _audioPlayer.play(UrlSource(audioUrl));
+        _audioElement!.play();
       }
     } catch (e) {
       print('Error playing audio: $e');
@@ -593,9 +601,33 @@ class _SongCardState extends State<SongCard> {
     }
   }
 
-  Future<void> _seekTo(double value) async {
-    final position = Duration(seconds: value.toInt());
-    await _audioPlayer.seek(position);
+  void _seekTo(double value) {
+    if (_audioElement == null) return;
+    _audioElement!.currentTime = value;
+  }
+
+  void _setVolume(double value) {
+    if (_audioElement == null) return;
+    setState(() {
+      volume = value;
+      _audioElement!.volume = value;
+    });
+  }
+
+  void _openInNewTab() {
+    if (widget.song.audioLink.isEmpty) return;
+    final audioUrl = widget.song.audioLink.first;
+    html.window.open(audioUrl, '_blank');
+  }
+
+  IconData _getVolumeIcon() {
+    if (volume == 0) {
+      return Icons.volume_off;
+    } else if (volume < 0.5) {
+      return Icons.volume_down;
+    } else {
+      return Icons.volume_up;
+    }
   }
 
   String _formatDuration(Duration duration) {
@@ -742,50 +774,110 @@ class _SongCardState extends State<SongCard> {
                         color: Colors.grey[200],
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
+                      child: Column(
                         children: [
-                          IconButton(
-                            icon: Icon(
-                              isPlaying ? Icons.pause : Icons.play_arrow,
-                              color: Colors.blue[700],
-                            ),
-                            onPressed: _togglePlayPause,
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  isPlaying ? Icons.pause : Icons.play_arrow,
+                                  color: Colors.blue[700],
+                                ),
+                                onPressed: _togglePlayPause,
+                              ),
+                              Text(
+                                _formatDuration(position),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              Expanded(
+                                child: Slider(
+                                  value: position.inSeconds.toDouble(),
+                                  max: duration.inSeconds.toDouble() > 0
+                                      ? duration.inSeconds.toDouble()
+                                      : 1.0,
+                                  onChanged: _seekTo,
+                                  activeColor: Colors.blue[700],
+                                  inactiveColor: Colors.grey[400],
+                                ),
+                              ),
+                              Text(
+                                _formatDuration(duration),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              // Volume button that toggles slider
+                              IconButton(
+                                icon: Icon(
+                                  _getVolumeIcon(),
+                                  color: Colors.grey[700],
+                                  size: 20,
+                                ),
+                                tooltip: 'Volume',
+                                onPressed: () {
+                                  setState(() {
+                                    showVolumeSlider = !showVolumeSlider;
+                                  });
+                                },
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.open_in_new,
+                                  color: Colors.grey[700],
+                                  size: 20,
+                                ),
+                                tooltip: 'Open in new tab',
+                                onPressed: _openInNewTab,
+                              ),
+                            ],
                           ),
-                          Text(
-                            _formatDuration(position),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[700],
+                          // Volume slider row (shown when toggled)
+                          if (showVolumeSlider)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.volume_down,
+                                    size: 16,
+                                    color: Colors.grey[700],
+                                  ),
+                                  Expanded(
+                                    child: Slider(
+                                      value: volume,
+                                      min: 0.0,
+                                      max: 1.0,
+                                      divisions: 20,
+                                      label: '${(volume * 100).round()}%',
+                                      onChanged: _setVolume,
+                                      activeColor: Colors.blue[700],
+                                      inactiveColor: Colors.grey[400],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.volume_up,
+                                    size: 16,
+                                    color: Colors.grey[700],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${(volume * 100).round()}%',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          Expanded(
-                            child: Slider(
-                              value: position.inSeconds.toDouble(),
-                              max: duration.inSeconds.toDouble() > 0
-                                  ? duration.inSeconds.toDouble()
-                                  : 1.0,
-                              onChanged: _seekTo,
-                              activeColor: Colors.blue[700],
-                              inactiveColor: Colors.grey[400],
-                            ),
-                          ),
-                          Text(
-                            _formatDuration(duration),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.volume_up,
-                              color: Colors.grey[700],
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              // Volume control could be added here
-                            },
-                          ),
                         ],
                       ),
                     ),
