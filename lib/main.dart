@@ -690,13 +690,37 @@ class _SongCardState extends State<SongCard> {
     return url.contains('soundcloud.com');
   }
 
+  bool _isYouTube(String url) {
+    return url.contains('youtube.com') || url.contains('youtu.be');
+  }
+
+  bool _isSpotify(String url) {
+    return url.contains('spotify.com');
+  }
+
+  bool _isRaagaBox(String url) {
+    return url.contains('raagabox.com');
+  }
+
   @override
   void initState() {
     super.initState();
 
-    if (widget.song.audioLink.isNotEmpty &&
-        !_isSoundCloud(widget.song.audioLink.first)) {
-      _audioElement = html.AudioElement(widget.song.audioLink.first);
+    final links = widget.song.audioLink;
+
+    // 🔒 HARD GUARD — prevents this crash forever
+    if (links.isEmpty || links.first.trim().isEmpty) {
+      return;
+    }
+
+    final url = links.first;
+
+    // Only prepare native audio (MP3 / S3)
+    if (!_isSoundCloud(url) &&
+        !_isYouTube(url) &&
+        !_isSpotify(url) &&
+        !_isRaagaBox(url)) {
+      _audioElement = html.AudioElement(url);
       _audioElement!.volume = volume;
 
       _audioElement!.onLoadedMetadata.listen((_) {
@@ -929,10 +953,26 @@ class _SongCardState extends State<SongCard> {
                   const SizedBox(height: 12),
 
                   // Audio Player
-                  if (widget.song.audioLink.isNotEmpty)
-                    _isSoundCloud(widget.song.audioLink.first)
-                        ? _buildSoundCloudPlayer(widget.song.audioLink.first)
-                        : _buildNativeAudioPlayer(),
+                  if (widget.song.audioLink.isNotEmpty &&
+                      widget.song.audioLink.first.trim().isNotEmpty)
+                    Builder(
+                      builder: (context) {
+                        final url = widget.song.audioLink.first;
+
+                        if (_isSoundCloud(url)) {
+                          return _buildSoundCloudPlayer(url);
+                        } else if (_isYouTube(url)) {
+                          return _buildYouTubePlayer(url, widget.index);
+                        } else if (_isSpotify(url)) {
+                          return _buildSpotifyPlayer(url, widget.index);
+                        } else if (_isRaagaBox(url)) {
+                          return _buildRaagaBoxPlayer(url, widget.index);
+                        } else {
+                          // ONLY S3 / MP3 comes here
+                          return _buildNativeAudioPlayer();
+                        }
+                      },
+                    ),
                 ],
               ),
             ),
@@ -1058,4 +1098,56 @@ class _SongCardState extends State<SongCard> {
 
     return SizedBox(height: 120, child: HtmlElementView(viewType: viewType));
   }
+}
+
+Widget _buildYouTubePlayer(String url, int index) {
+  final videoId = Uri.parse(url).queryParameters['v'] ?? url.split('/').last;
+
+  final embedUrl = 'https://www.youtube.com/embed/$videoId';
+
+  final viewType = 'youtube-$index';
+
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
+    return html.IFrameElement()
+      ..src = embedUrl
+      ..style.border = 'none'
+      ..width = '100%'
+      ..height = '200'
+      ..allow = 'autoplay';
+  });
+
+  return SizedBox(height: 200, child: HtmlElementView(viewType: viewType));
+}
+
+Widget _buildSpotifyPlayer(String url, int index) {
+  final embedUrl = url.replaceFirst(
+    'open.spotify.com',
+    'open.spotify.com/embed',
+  );
+
+  final viewType = 'spotify-$index';
+
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
+    return html.IFrameElement()
+      ..src = embedUrl
+      ..style.border = 'none'
+      ..width = '100%'
+      ..height = '152';
+  });
+
+  return SizedBox(height: 152, child: HtmlElementView(viewType: viewType));
+}
+
+Widget _buildRaagaBoxPlayer(String url, int index) {
+  final viewType = 'raagabox-$index';
+
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
+    return html.IFrameElement()
+      ..src = url
+      ..style.border = 'none'
+      ..width = '100%'
+      ..height = '200';
+  });
+
+  return SizedBox(height: 200, child: HtmlElementView(viewType: viewType));
 }
