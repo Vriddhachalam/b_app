@@ -94,6 +94,7 @@ class SongsListPage extends StatefulWidget {
 class _SongsListPageState extends State<SongsListPage> {
   List<Song> allSongs = [];
   List<Song> filteredSongs = [];
+  List<Song> paginatedSongs = [];
 
   final TextEditingController _searchController = TextEditingController();
   String selectedDeity = 'All';
@@ -102,6 +103,12 @@ class _SongsListPageState extends State<SongsListPage> {
   String selectedBeat = 'All';
   String selectedLanguage = 'All';
   String selectedRaga = 'All';
+
+  // Pagination
+  int currentPage = 1;
+  int itemsPerPage = 5;
+  int totalPages = 1;
+  final List<int> itemsPerPageOptions = [5, 10, 15, 20, 25];
 
   // Dynamic filter options
   List<String> deityOptions = ['All'];
@@ -131,6 +138,9 @@ class _SongsListPageState extends State<SongsListPage> {
 
       // Extract unique filter values from data
       _extractFilterOptions();
+
+      // Apply pagination
+      _updatePagination();
 
       setState(() {});
     } catch (e) {
@@ -225,6 +235,39 @@ class _SongsListPageState extends State<SongsListPage> {
             matchesLanguage &&
             matchesRaga;
       }).toList();
+
+      // Reset to page 1 and update pagination
+      currentPage = 1;
+      _updatePagination();
+    });
+  }
+
+  void _updatePagination() {
+    totalPages = (filteredSongs.length / itemsPerPage).ceil();
+    if (totalPages == 0) totalPages = 1;
+
+    // Calculate start and end indices
+    final startIndex = (currentPage - 1) * itemsPerPage;
+    final endIndex = (startIndex + itemsPerPage).clamp(0, filteredSongs.length);
+
+    // Get paginated songs
+    paginatedSongs = filteredSongs.sublist(startIndex, endIndex);
+  }
+
+  void _changePage(int page) {
+    if (page < 1 || page > totalPages) return;
+    setState(() {
+      currentPage = page;
+      _updatePagination();
+    });
+  }
+
+  void _changeItemsPerPage(int? value) {
+    if (value == null) return;
+    setState(() {
+      itemsPerPage = value;
+      currentPage = 1;
+      _updatePagination();
     });
   }
 
@@ -238,207 +281,327 @@ class _SongsListPageState extends State<SongsListPage> {
       selectedLanguage = 'All';
       selectedRaga = 'All';
       filteredSongs = allSongs;
+      currentPage = 1;
+      _updatePagination();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 800;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Devotional Songs'), centerTitle: true),
-      body: Row(
+      appBar: AppBar(
+        title: const Text('Devotional Songs'),
+        centerTitle: true,
+        leading: isMobile
+            ? Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.filter_list),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                ),
+              )
+            : null,
+      ),
+      drawer: isMobile ? Drawer(child: _buildFilterSidebar()) : null,
+      body: isMobile
+          ? _buildSongsList()
+          : Row(
+              children: [
+                // Left Sidebar - Filters (Desktop only)
+                Container(
+                  width: 300,
+                  color: Colors.white,
+                  child: _buildFilterSidebar(),
+                ),
+
+                // Right Content - Songs List
+                Expanded(child: _buildSongsList()),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildFilterSidebar() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left Sidebar - Filters
-          Container(
-            width: 300,
-            color: Colors.white,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Devotional Songs',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 30),
+          const Text(
+            'Devotional Songs',
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 30),
 
-                  // Search Box
-                  _buildFilterSection(
-                    'Lyrics',
-                    TextField(
-                      controller: _searchController,
-                      decoration: InputDecoration(
-                        hintText: 'Search lyrics...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Deity Dropdown
-                  _buildFilterSection(
-                    'Deity',
-                    _buildDropdown(
-                      selectedDeity,
-                      deityOptions,
-                      (value) => setState(() {
-                        selectedDeity = value!;
-                        _filterSongs();
-                      }),
-                    ),
-                  ),
-
-                  // Level Dropdown
-                  _buildFilterSection(
-                    'Level',
-                    _buildDropdown(
-                      selectedLevel,
-                      levelOptions,
-                      (value) => setState(() {
-                        selectedLevel = value!;
-                        _filterSongs();
-                      }),
-                    ),
-                  ),
-
-                  // Tempo Dropdown
-                  _buildFilterSection(
-                    'Tempo',
-                    _buildDropdown(
-                      selectedTempo,
-                      tempoOptions,
-                      (value) => setState(() {
-                        selectedTempo = value!;
-                        _filterSongs();
-                      }),
-                    ),
-                  ),
-
-                  // Beat Dropdown
-                  _buildFilterSection(
-                    'Beat',
-                    _buildDropdown(
-                      selectedBeat,
-                      beatOptions,
-                      (value) => setState(() {
-                        selectedBeat = value!;
-                        _filterSongs();
-                      }),
-                    ),
-                  ),
-
-                  // Raga Dropdown
-                  _buildFilterSection(
-                    'Raga',
-                    _buildDropdown(
-                      selectedRaga,
-                      ragaOptions,
-                      (value) => setState(() {
-                        selectedRaga = value!;
-                        _filterSongs();
-                      }),
-                    ),
-                  ),
-
-                  // Language Dropdown
-                  _buildFilterSection(
-                    'Language',
-                    _buildDropdown(
-                      selectedLanguage,
-                      languageOptions,
-                      (value) => setState(() {
-                        selectedLanguage = value!;
-                        _filterSongs();
-                      }),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Action Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _resetFilters,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red[900],
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: const Text('Reset'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _filterSongs,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue[600],
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          child: const Text('Search'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+          // Search Box
+          _buildFilterSection(
+            'Lyrics',
+            TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search lyrics...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
             ),
           ),
 
-          // Right Content - Songs List
-          Expanded(
-            child: Container(
-              color: Colors.grey[100],
-              child: Column(
-                children: [
-                  // Header
-                  Container(
-                    color: Colors.white,
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
+          // Deity Dropdown
+          _buildFilterSection(
+            'Deity',
+            _buildDropdown(
+              selectedDeity,
+              deityOptions,
+              (value) => setState(() {
+                selectedDeity = value!;
+                _filterSongs();
+              }),
+            ),
+          ),
+
+          // Level Dropdown
+          _buildFilterSection(
+            'Level',
+            _buildDropdown(
+              selectedLevel,
+              levelOptions,
+              (value) => setState(() {
+                selectedLevel = value!;
+                _filterSongs();
+              }),
+            ),
+          ),
+
+          // Tempo Dropdown
+          _buildFilterSection(
+            'Tempo',
+            _buildDropdown(
+              selectedTempo,
+              tempoOptions,
+              (value) => setState(() {
+                selectedTempo = value!;
+                _filterSongs();
+              }),
+            ),
+          ),
+
+          // Beat Dropdown
+          _buildFilterSection(
+            'Beat',
+            _buildDropdown(
+              selectedBeat,
+              beatOptions,
+              (value) => setState(() {
+                selectedBeat = value!;
+                _filterSongs();
+              }),
+            ),
+          ),
+
+          // Raga Dropdown
+          _buildFilterSection(
+            'Raga',
+            _buildDropdown(
+              selectedRaga,
+              ragaOptions,
+              (value) => setState(() {
+                selectedRaga = value!;
+                _filterSongs();
+              }),
+            ),
+          ),
+
+          // Language Dropdown
+          _buildFilterSection(
+            'Language',
+            _buildDropdown(
+              selectedLanguage,
+              languageOptions,
+              (value) => setState(() {
+                selectedLanguage = value!;
+                _filterSongs();
+              }),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Action Buttons
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _resetFilters,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[900],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('Reset'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _filterSongs,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('Search'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSongsList() {
+    final isMobile = MediaQuery.of(context).size.width < 800;
+
+    return Container(
+      color: Colors.grey[100],
+      child: Column(
+        children: [
+          // Header
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    if (!isMobile)
+                      const SizedBox(
+                        width: 50,
+                        child: Text(
+                          'No.',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    const Expanded(
+                      child: Text(
+                        'Song Title',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    if (!isMobile)
+                      TextButton.icon(
+                        onPressed: () {},
+                        icon: const Icon(Icons.share, size: 16),
+                        label: const Text('Share search results'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Pagination controls
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Items per page selector
+                    Row(
                       children: [
-                        const SizedBox(
-                          width: 50,
-                          child: Text(
-                            'No.',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                        Text(
+                          'Show: ',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[700],
                           ),
                         ),
-                        const Expanded(
-                          child: Text(
-                            'Song Title',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: DropdownButton<int>(
+                            value: itemsPerPage,
+                            underline: const SizedBox(),
+                            items: itemsPerPageOptions.map((int value) {
+                              return DropdownMenuItem<int>(
+                                value: value,
+                                child: Text('$value'),
+                              );
+                            }).toList(),
+                            onChanged: _changeItemsPerPage,
                           ),
                         ),
-                        TextButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.share, size: 16),
-                          label: const Text('Share search results'),
+                        const SizedBox(width: 8),
+                        Text(
+                          'of ${filteredSongs.length}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[700],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-
-                  // Songs List
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: filteredSongs.length,
-                      itemBuilder: (context, index) {
-                        return SongCard(
-                          song: filteredSongs[index],
-                          index: index + 1,
-                        );
-                      },
+                    // Page navigation
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.first_page),
+                          onPressed: currentPage > 1
+                              ? () => _changePage(1)
+                              : null,
+                          iconSize: 20,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left),
+                          onPressed: currentPage > 1
+                              ? () => _changePage(currentPage - 1)
+                              : null,
+                          iconSize: 20,
+                        ),
+                        Text(
+                          'Page $currentPage of $totalPages',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right),
+                          onPressed: currentPage < totalPages
+                              ? () => _changePage(currentPage + 1)
+                              : null,
+                          iconSize: 20,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.last_page),
+                          onPressed: currentPage < totalPages
+                              ? () => _changePage(totalPages)
+                              : null,
+                          iconSize: 20,
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Songs List
+          Expanded(
+            child: ListView.builder(
+              itemCount: paginatedSongs.length,
+              itemBuilder: (context, index) {
+                // Calculate actual song number based on page
+                final actualIndex =
+                    (currentPage - 1) * itemsPerPage + index + 1;
+                return SongCard(
+                  song: paginatedSongs[index],
+                  index: actualIndex,
+                );
+              },
             ),
           ),
         ],
