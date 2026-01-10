@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:html' as html;
-import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/foundation.dart';
 
@@ -600,6 +599,7 @@ class _SongsListPageState extends State<SongsListPage> {
                 final actualIndex =
                     (currentPage - 1) * itemsPerPage + index + 1;
                 return SongCard(
+                  key: ValueKey(paginatedSongs[index].songId), // or unique URL
                   song: paginatedSongs[index],
                   index: actualIndex,
                 );
@@ -680,6 +680,7 @@ class SongCard extends StatefulWidget {
 
 class _SongCardState extends State<SongCard> {
   html.AudioElement? _audioElement;
+  static html.AudioElement? _currentlyPlaying;
   bool isPlaying = false;
   bool showVolumeSlider = false;
   Duration duration = Duration.zero;
@@ -689,13 +690,37 @@ class _SongCardState extends State<SongCard> {
     return url.contains('soundcloud.com');
   }
 
+  bool _isYouTube(String url) {
+    return url.contains('youtube.com') || url.contains('youtu.be');
+  }
+
+  bool _isSpotify(String url) {
+    return url.contains('spotify.com');
+  }
+
+  bool _isRaagaBox(String url) {
+    return url.contains('raagabox.com');
+  }
+
   @override
   void initState() {
     super.initState();
 
-    if (widget.song.audioLink.isNotEmpty &&
-        !_isSoundCloud(widget.song.audioLink.first)) {
-      _audioElement = html.AudioElement(widget.song.audioLink.first);
+    final links = widget.song.audioLink;
+
+    // 🔒 HARD GUARD — prevents this crash forever
+    if (links.isEmpty || links.first.trim().isEmpty) {
+      return;
+    }
+
+    final url = links.first;
+
+    // Only prepare native audio (MP3 / S3)
+    if (!_isSoundCloud(url) &&
+        !_isYouTube(url) &&
+        !_isSpotify(url) &&
+        !_isRaagaBox(url)) {
+      _audioElement = html.AudioElement(url);
       _audioElement!.volume = volume;
 
       _audioElement!.onLoadedMetadata.listen((_) {
@@ -735,6 +760,9 @@ class _SongCardState extends State<SongCard> {
 
   @override
   void dispose() {
+    if (_currentlyPlaying == _audioElement) {
+      _currentlyPlaying = null;
+    }
     _audioElement?.pause();
     _audioElement = null;
     super.dispose();
@@ -747,18 +775,15 @@ class _SongCardState extends State<SongCard> {
       if (isPlaying) {
         _audioElement!.pause();
       } else {
+        if (_currentlyPlaying != null && _currentlyPlaying != _audioElement) {
+          _currentlyPlaying!.pause();
+        }
+
         _audioElement!.play();
+        _currentlyPlaying = _audioElement;
       }
     } catch (e) {
-      print('Error playing audio: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error playing audio: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      debugPrint('Error playing audio: $e');
     }
   }
 
@@ -928,10 +953,26 @@ class _SongCardState extends State<SongCard> {
                   const SizedBox(height: 12),
 
                   // Audio Player
-                  if (widget.song.audioLink.isNotEmpty)
-                    _isSoundCloud(widget.song.audioLink.first)
-                        ? _buildSoundCloudPlayer(widget.song.audioLink.first)
-                        : _buildNativeAudioPlayer(),
+                  if (widget.song.audioLink.isNotEmpty &&
+                      widget.song.audioLink.first.trim().isNotEmpty)
+                    Builder(
+                      builder: (context) {
+                        final url = widget.song.audioLink.first;
+
+                        if (_isSoundCloud(url)) {
+                          return _buildSoundCloudPlayer(url);
+                        } else if (_isYouTube(url)) {
+                          return _buildYouTubePlayer(url, widget.index);
+                        } else if (_isSpotify(url)) {
+                          return _buildSpotifyPlayer(url, widget.index);
+                        } else if (_isRaagaBox(url)) {
+                          return _buildRaagaBoxPlayer(url, widget.index);
+                        } else {
+                          // ONLY S3 / MP3 comes here
+                          return _buildNativeAudioPlayer();
+                        }
+                      },
+                    ),
                 ],
               ),
             ),
@@ -1057,4 +1098,56 @@ class _SongCardState extends State<SongCard> {
 
     return SizedBox(height: 120, child: HtmlElementView(viewType: viewType));
   }
+}
+
+Widget _buildYouTubePlayer(String url, int index) {
+  final videoId = Uri.parse(url).queryParameters['v'] ?? url.split('/').last;
+
+  final embedUrl = 'https://www.youtube.com/embed/$videoId';
+
+  final viewType = 'youtube-$index';
+
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
+    return html.IFrameElement()
+      ..src = embedUrl
+      ..style.border = 'none'
+      ..width = '100%'
+      ..height = '200'
+      ..allow = 'autoplay';
+  });
+
+  return SizedBox(height: 200, child: HtmlElementView(viewType: viewType));
+}
+
+Widget _buildSpotifyPlayer(String url, int index) {
+  final embedUrl = url.replaceFirst(
+    'open.spotify.com',
+    'open.spotify.com/embed',
+  );
+
+  final viewType = 'spotify-$index';
+
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
+    return html.IFrameElement()
+      ..src = embedUrl
+      ..style.border = 'none'
+      ..width = '100%'
+      ..height = '152';
+  });
+
+  return SizedBox(height: 152, child: HtmlElementView(viewType: viewType));
+}
+
+Widget _buildRaagaBoxPlayer(String url, int index) {
+  final viewType = 'raagabox-$index';
+
+  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
+    return html.IFrameElement()
+      ..src = url
+      ..style.border = 'none'
+      ..width = '100%'
+      ..height = '200';
+  });
+
+  return SizedBox(height: 200, child: HtmlElementView(viewType: viewType));
 }
