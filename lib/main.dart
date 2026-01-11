@@ -93,6 +93,12 @@ class SongsListPage extends StatefulWidget {
 }
 
 class _SongsListPageState extends State<SongsListPage> {
+  // ===== Global Bottom Player State =====
+  Song? _currentSong;
+  html.AudioElement? _globalAudio;
+  Duration _globalDuration = Duration.zero;
+  Duration _globalPosition = Duration.zero;
+
   List<Song> allSongs = [];
   List<Song> filteredSongs = [];
   List<Song> paginatedSongs = [];
@@ -287,40 +293,160 @@ class _SongsListPageState extends State<SongsListPage> {
     });
   }
 
+  void _playSongGlobally(Song song) {
+    _globalAudio?.pause();
+
+    if (song.audioLink.isEmpty || song.audioLink.first.trim().isEmpty) {
+      return;
+    }
+
+    final url = song.audioLink.first;
+
+    _globalAudio = html.AudioElement(url)
+      ..volume = 1.0
+      ..onLoadedMetadata.listen((_) {
+        setState(() {
+          _globalDuration = Duration(seconds: _globalAudio!.duration.toInt());
+        });
+      })
+      ..onTimeUpdate.listen((_) {
+        setState(() {
+          _globalPosition = Duration(
+            seconds: _globalAudio!.currentTime.toInt(),
+          );
+        });
+      })
+      ..onEnded.listen((_) {
+        setState(() {
+          _globalPosition = Duration.zero;
+          _currentSong = null;
+        });
+      });
+
+    _globalAudio!.play();
+
+    setState(() {
+      _currentSong = song;
+    });
+  }
+
+  void _seekGlobal(double seconds) {
+    if (_globalAudio == null) return;
+    _globalAudio!.currentTime = seconds;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 800;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Devotional Songs'),
-        centerTitle: true,
-        leading: isMobile
-            ? Builder(
-                builder: (context) => IconButton(
-                  icon: const Icon(Icons.filter_list),
-                  onPressed: () => Scaffold.of(context).openDrawer(),
+    return Stack(
+      children: [
+        Scaffold(
+          appBar: AppBar(
+            title: const Text('Devotional Songs'),
+            centerTitle: true,
+          ),
+          body: isMobile
+              ? _buildSongsList()
+              : Row(
+                  children: [
+                    Container(
+                      width: 300,
+                      color: Colors.white,
+                      child: _buildFilterSidebar(),
+                    ),
+                    Expanded(child: _buildSongsList()),
+                  ],
                 ),
-              )
-            : null,
-      ),
-      drawer: isMobile ? Drawer(child: _buildFilterSidebar()) : null,
-      body: isMobile
-          ? _buildSongsList()
-          : Row(
-              children: [
-                // Left Sidebar - Filters (Desktop only)
-                Container(
-                  width: 300,
-                  color: Colors.white,
-                  child: _buildFilterSidebar(),
-                ),
+        ),
 
-                // Right Content - Songs List
-                Expanded(child: _buildSongsList()),
+        if (_currentSong != null)
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomPlayer()),
+      ],
+    );
+  }
+
+  Widget _buildBottomPlayer() {
+    final isPlaying = _globalAudio != null && !_globalAudio!.paused;
+
+    return Material(
+      elevation: 12,
+      color: Colors.white,
+      child: Container(
+        height: 90,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Song title + Play/Pause
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _currentSong!.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                  onPressed: () {
+                    if (_globalAudio == null) return;
+
+                    if (_globalAudio!.paused) {
+                      _globalAudio!.play();
+                    } else {
+                      _globalAudio!.pause();
+                    }
+
+                    setState(() {});
+                  },
+                ),
               ],
             ),
+
+            // Timeline + time labels
+            Row(
+              children: [
+                // Current time
+                Text(
+                  _formatTime(_globalPosition),
+                  style: const TextStyle(fontSize: 12),
+                ),
+
+                // Slider
+                Expanded(
+                  child: Slider(
+                    value: _globalPosition.inSeconds.toDouble(),
+                    min: 0,
+                    max: _globalDuration.inSeconds > 0
+                        ? _globalDuration.inSeconds.toDouble()
+                        : 1,
+                    onChanged: (value) {
+                      _seekGlobal(value);
+                    },
+                  ),
+                ),
+
+                // Total duration
+                Text(
+                  _formatTime(_globalDuration),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
+  }
+
+  String _formatTime(Duration d) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(d.inMinutes.remainder(60));
+    final seconds = twoDigits(d.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
 
   Widget _buildFilterSidebar() {
@@ -602,6 +728,7 @@ class _SongsListPageState extends State<SongsListPage> {
                   key: ValueKey(paginatedSongs[index].songId), // or unique URL
                   song: paginatedSongs[index],
                   index: actualIndex,
+                  onPlay: _playSongGlobally,
                 );
               },
             ),
@@ -670,9 +797,14 @@ class _SongsListPageState extends State<SongsListPage> {
 class SongCard extends StatefulWidget {
   final Song song;
   final int index;
+  final void Function(Song song)? onPlay;
 
-  const SongCard({Key? key, required this.song, required this.index})
-    : super(key: key);
+  const SongCard({
+    Key? key,
+    required this.song,
+    required this.index,
+    this.onPlay,
+  }) : super(key: key);
 
   @override
   State<SongCard> createState() => _SongCardState();
@@ -998,7 +1130,9 @@ class _SongCardState extends State<SongCard> {
                   isPlaying ? Icons.pause : Icons.play_arrow,
                   color: Colors.blue[700],
                 ),
-                onPressed: _togglePlayPause,
+                onPressed: () {
+                  widget.onPlay?.call(widget.song);
+                },
               ),
               Text(
                 _formatDuration(position),
