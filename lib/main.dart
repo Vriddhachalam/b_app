@@ -46,6 +46,11 @@ class Song {
   final List<String> audioLink;
   final List<String> videoLink;
   final String url;
+  final String referenceGentsPitch;
+  final String referenceLadiesPitch;
+  final String notesRange;
+  final String songTags;
+  final List<String> goldenVoice;
 
   Song({
     required this.songId,
@@ -62,6 +67,11 @@ class Song {
     required this.audioLink,
     required this.videoLink,
     required this.url,
+    required this.referenceGentsPitch,
+    required this.referenceLadiesPitch,
+    required this.notesRange,
+    required this.songTags,
+    required this.goldenVoice,
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -80,6 +90,15 @@ class Song {
       audioLink: List<String>.from(json['audio_link'] ?? []),
       videoLink: List<String>.from(json['video_link'] ?? []),
       url: json['url'] ?? '',
+      referenceGentsPitch:
+          json['Reference Gents Pitch'] ?? json['reference_gents_pitch'] ?? '',
+      referenceLadiesPitch:
+          json['Reference Ladies Pitch'] ??
+          json['reference_ladies_pitch'] ??
+          '',
+      notesRange: json['Notes Range'] ?? json['notes_range'] ?? '',
+      songTags: json['songtags'] ?? json['Song Tags'] ?? '',
+      goldenVoice: List<String>.from(json['golden_voice'] ?? []),
     );
   }
 }
@@ -136,12 +155,13 @@ class _SongsListPageState extends State<SongsListPage> {
     try {
       // Load from assets
       final String jsonString = await rootBundle.loadString(
-        'assets/songs.json',
+        'sairhythms_full_songs.json',
       );
-      final Map<String, dynamic> jsonData = jsonDecode(jsonString);
-      final List<dynamic> items = jsonDecode(jsonData['data']);
+
+      final List<dynamic> items = jsonDecode(jsonString);
+
       allSongs = items.map((json) => Song.fromJson(json)).toList();
-      filteredSongs = allSongs;
+      filteredSongs = List.from(allSongs);
 
       // Extract unique filter values from data
       _extractFilterOptions();
@@ -916,6 +936,14 @@ class _SongCardState extends State<SongCard> {
       }
     } catch (e) {
       debugPrint('Error playing audio: $e');
+      // if (mounted) {
+      //   ScaffoldMessenger.of(context).showSnackBar(
+      //     SnackBar(
+      //       content: Text('Error playing audio: $e'),
+      //       backgroundColor: Colors.red,
+      //     ),
+      //   );
+      // }
     }
   }
 
@@ -991,6 +1019,13 @@ class _SongCardState extends State<SongCard> {
       });
     }
 
+    // Add single value badge (for non-comma-separated fields)
+    void addSingleBadge(String value, Color color, String prefix) {
+      if (value.trim().isNotEmpty) {
+        badges.add(_buildBadge('$prefix: ${value.trim()}', color));
+      }
+    }
+
     // Add badges for different attributes with different colors
     addBadges(widget.song.deity, Colors.orange, 'Deity');
     addBadges(widget.song.language, Colors.blue, 'Lang');
@@ -998,6 +1033,19 @@ class _SongCardState extends State<SongCard> {
     addBadges(widget.song.tempo, Colors.purple, 'Tempo');
     addBadges(widget.song.raga, Colors.teal, 'Raga');
     addBadges(widget.song.beat, Colors.red, 'Beat');
+
+    // Add pitch and range badges
+    addSingleBadge(
+      widget.song.referenceGentsPitch,
+      Colors.indigo,
+      'Gents Pitch',
+    );
+    addSingleBadge(
+      widget.song.referenceLadiesPitch,
+      Colors.pink,
+      'Ladies Pitch',
+    );
+    addSingleBadge(widget.song.notesRange, Colors.deepOrange, 'Notes Range');
 
     return badges;
   }
@@ -1231,6 +1279,398 @@ class _SongCardState extends State<SongCard> {
     }
 
     return SizedBox(height: 120, child: HtmlElementView(viewType: viewType));
+  }
+}
+
+// Add this new widget class to your main.dart file
+
+class PianoKeyboardWidget extends StatelessWidget {
+  final String noteRange;
+  final String label;
+  final Color highlightColor;
+
+  const PianoKeyboardWidget({
+    Key? key,
+    required this.noteRange,
+    required this.label,
+    this.highlightColor = Colors.blue,
+  }) : super(key: key);
+
+  // Piano keys spanning 2 octaves (C3 to B4)
+  static const List<String> allNotes = [
+    'C3',
+    'C#3',
+    'D3',
+    'D#3',
+    'E3',
+    'F3',
+    'F#3',
+    'G3',
+    'G#3',
+    'A3',
+    'A#3',
+    'B3',
+    'C4',
+    'C#4',
+    'D4',
+    'D#4',
+    'E4',
+    'F4',
+    'F#4',
+    'G4',
+    'G#4',
+    'A4',
+    'A#4',
+    'B4',
+  ];
+
+  bool _isBlackKey(String note) {
+    return note.contains('#');
+  }
+
+  List<String> _parseRange(String range) {
+    if (range.isEmpty) return [];
+
+    // Handle formats like "C3-G4", "C3 to G4", "C3,G4", etc.
+    final cleaned = range.replaceAll(' ', '').toUpperCase();
+
+    // Try different separators
+    List<String> parts = [];
+    if (cleaned.contains('-')) {
+      parts = cleaned.split('-');
+    } else if (cleaned.contains('TO')) {
+      parts = cleaned.split('TO');
+    } else if (cleaned.contains(',')) {
+      parts = cleaned.split(',');
+    } else {
+      // Single note
+      return [cleaned];
+    }
+
+    if (parts.length == 2) {
+      final startNote = parts[0].trim();
+      final endNote = parts[1].trim();
+
+      final startIndex = allNotes.indexOf(startNote);
+      final endIndex = allNotes.indexOf(endNote);
+
+      if (startIndex != -1 && endIndex != -1) {
+        return allNotes.sublist(startIndex, endIndex + 1);
+      }
+    }
+
+    return [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final highlightedNotes = _parseRange(noteRange);
+
+    if (highlightedNotes.isEmpty && noteRange.isNotEmpty) {
+      // If parsing failed, show text fallback
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: highlightColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: highlightColor.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.piano, size: 16, color: highlightColor),
+            const SizedBox(width: 6),
+            Text(
+              '$label: $noteRange',
+              style: TextStyle(
+                color: highlightColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (highlightedNotes.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.piano, size: 18, color: highlightColor),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                noteRange,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: highlightColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: Stack(
+              children: [
+                // White keys
+                Row(
+                  children: allNotes
+                      .where((note) => !_isBlackKey(note))
+                      .map((note) => _buildWhiteKey(note, highlightedNotes))
+                      .toList(),
+                ),
+                // Black keys (positioned absolutely)
+                ...allNotes
+                    .asMap()
+                    .entries
+                    .where((entry) => _isBlackKey(entry.value))
+                    .map(
+                      (entry) => _buildBlackKey(
+                        entry.value,
+                        entry.key,
+                        highlightedNotes,
+                      ),
+                    )
+                    .toList(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWhiteKey(String note, List<String> highlighted) {
+    final isHighlighted = highlighted.contains(note);
+
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 0.5),
+        decoration: BoxDecoration(
+          color: isHighlighted ? highlightColor.withOpacity(0.3) : Colors.white,
+          border: Border.all(
+            color: isHighlighted ? highlightColor : Colors.grey[400]!,
+            width: isHighlighted ? 2 : 1,
+          ),
+          borderRadius: const BorderRadius.only(
+            bottomLeft: Radius.circular(4),
+            bottomRight: Radius.circular(4),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                note,
+                style: TextStyle(
+                  fontSize: 8,
+                  color: isHighlighted ? highlightColor : Colors.grey[600],
+                  fontWeight: isHighlighted
+                      ? FontWeight.bold
+                      : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBlackKey(String note, int index, List<String> highlighted) {
+    final isHighlighted = highlighted.contains(note);
+
+    // Calculate position based on white key positions
+    final whiteKeysBefore = allNotes
+        .sublist(0, index)
+        .where((n) => !_isBlackKey(n))
+        .length;
+    final whiteKeyWidth = 20.0; // Approximate, will be flexible
+
+    return Positioned(
+      left: (whiteKeysBefore * whiteKeyWidth) - 6,
+      top: 0,
+      child: Container(
+        width: 12,
+        height: 50,
+        decoration: BoxDecoration(
+          color: isHighlighted ? highlightColor.withOpacity(0.8) : Colors.black,
+          border: Border.all(
+            color: isHighlighted ? highlightColor : Colors.grey[800]!,
+            width: isHighlighted ? 2 : 1,
+          ),
+          borderRadius: const BorderRadius.only(
+            bottomLeft: Radius.circular(2),
+            bottomRight: Radius.circular(2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Add this new widget for pitch display with key selection
+class PitchSelectorWidget extends StatefulWidget {
+  final String pitch;
+  final String label;
+  final Color color;
+
+  const PitchSelectorWidget({
+    Key? key,
+    required this.pitch,
+    required this.label,
+    required this.color,
+  }) : super(key: key);
+
+  @override
+  State<PitchSelectorWidget> createState() => _PitchSelectorWidgetState();
+}
+
+class _PitchSelectorWidgetState extends State<PitchSelectorWidget> {
+  String selectedKey = 'C';
+
+  static const List<String> keys = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ];
+
+  String _transposeNote(String note, int semitones) {
+    if (note.isEmpty) return note;
+
+    // Extract base note and octave
+    final match = RegExp(r'([A-G]#?)(\d)').firstMatch(note);
+    if (match == null) return note;
+
+    final baseNote = match.group(1)!;
+    final octave = int.parse(match.group(2)!);
+
+    final currentIndex = keys.indexOf(baseNote);
+    if (currentIndex == -1) return note;
+
+    int newIndex = (currentIndex + semitones) % 12;
+    int octaveChange = (currentIndex + semitones) ~/ 12;
+
+    if (newIndex < 0) {
+      newIndex += 12;
+      octaveChange -= 1;
+    }
+
+    final newOctave = octave + octaveChange;
+    return '${keys[newIndex]}$newOctave';
+  }
+
+  String _transposePitch(String pitch, String fromKey, String toKey) {
+    final fromIndex = keys.indexOf(fromKey);
+    final toIndex = keys.indexOf(toKey);
+
+    if (fromIndex == -1 || toIndex == -1) return pitch;
+
+    int semitones = toIndex - fromIndex;
+
+    // Handle range notation
+    if (pitch.contains('-')) {
+      final parts = pitch.split('-');
+      final transposed1 = _transposeNote(parts[0].trim(), semitones);
+      final transposed2 = _transposeNote(parts[1].trim(), semitones);
+      return '$transposed1-$transposed2';
+    }
+
+    return _transposeNote(pitch, semitones);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.pitch.isEmpty) return const SizedBox.shrink();
+
+    final transposedPitch = _transposePitch(widget.pitch, 'C', selectedKey);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Key: ',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: widget.color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: widget.color.withOpacity(0.3)),
+              ),
+              child: DropdownButton<String>(
+                value: selectedKey,
+                underline: const SizedBox(),
+                isDense: true,
+                items: keys.map((key) {
+                  return DropdownMenuItem(
+                    value: key,
+                    child: Text(
+                      key,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: widget.color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => selectedKey = value);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        PianoKeyboardWidget(
+          noteRange: transposedPitch,
+          label: widget.label,
+          highlightColor: widget.color,
+        ),
+      ],
+    );
   }
 }
 
