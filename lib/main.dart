@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 import 'package:flutter/foundation.dart';
 
@@ -93,12 +94,6 @@ class SongsListPage extends StatefulWidget {
 }
 
 class _SongsListPageState extends State<SongsListPage> {
-  // ===== Global Bottom Player State =====
-  Song? _currentSong;
-  html.AudioElement? _globalAudio;
-  Duration _globalDuration = Duration.zero;
-  Duration _globalPosition = Duration.zero;
-
   List<Song> allSongs = [];
   List<Song> filteredSongs = [];
   List<Song> paginatedSongs = [];
@@ -293,160 +288,40 @@ class _SongsListPageState extends State<SongsListPage> {
     });
   }
 
-  void _playSongGlobally(Song song) {
-    _globalAudio?.pause();
-
-    if (song.audioLink.isEmpty || song.audioLink.first.trim().isEmpty) {
-      return;
-    }
-
-    final url = song.audioLink.first;
-
-    _globalAudio = html.AudioElement(url)
-      ..volume = 1.0
-      ..onLoadedMetadata.listen((_) {
-        setState(() {
-          _globalDuration = Duration(seconds: _globalAudio!.duration.toInt());
-        });
-      })
-      ..onTimeUpdate.listen((_) {
-        setState(() {
-          _globalPosition = Duration(
-            seconds: _globalAudio!.currentTime.toInt(),
-          );
-        });
-      })
-      ..onEnded.listen((_) {
-        setState(() {
-          _globalPosition = Duration.zero;
-          _currentSong = null;
-        });
-      });
-
-    _globalAudio!.play();
-
-    setState(() {
-      _currentSong = song;
-    });
-  }
-
-  void _seekGlobal(double seconds) {
-    if (_globalAudio == null) return;
-    _globalAudio!.currentTime = seconds;
-  }
-
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 800;
 
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: AppBar(
-            title: const Text('Devotional Songs'),
-            centerTitle: true,
-          ),
-          body: isMobile
-              ? _buildSongsList()
-              : Row(
-                  children: [
-                    Container(
-                      width: 300,
-                      color: Colors.white,
-                      child: _buildFilterSidebar(),
-                    ),
-                    Expanded(child: _buildSongsList()),
-                  ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Devotional Songs'),
+        centerTitle: true,
+        leading: isMobile
+            ? Builder(
+                builder: (context) => IconButton(
+                  icon: const Icon(Icons.filter_list),
+                  onPressed: () => Scaffold.of(context).openDrawer(),
                 ),
-        ),
-
-        if (_currentSong != null)
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomPlayer()),
-      ],
-    );
-  }
-
-  Widget _buildBottomPlayer() {
-    final isPlaying = _globalAudio != null && !_globalAudio!.paused;
-
-    return Material(
-      elevation: 12,
-      color: Colors.white,
-      child: Container(
-        height: 90,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Song title + Play/Pause
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _currentSong!.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                  onPressed: () {
-                    if (_globalAudio == null) return;
-
-                    if (_globalAudio!.paused) {
-                      _globalAudio!.play();
-                    } else {
-                      _globalAudio!.pause();
-                    }
-
-                    setState(() {});
-                  },
-                ),
-              ],
-            ),
-
-            // Timeline + time labels
-            Row(
-              children: [
-                // Current time
-                Text(
-                  _formatTime(_globalPosition),
-                  style: const TextStyle(fontSize: 12),
-                ),
-
-                // Slider
-                Expanded(
-                  child: Slider(
-                    value: _globalPosition.inSeconds.toDouble(),
-                    min: 0,
-                    max: _globalDuration.inSeconds > 0
-                        ? _globalDuration.inSeconds.toDouble()
-                        : 1,
-                    onChanged: (value) {
-                      _seekGlobal(value);
-                    },
-                  ),
-                ),
-
-                // Total duration
-                Text(
-                  _formatTime(_globalDuration),
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-          ],
-        ),
+              )
+            : null,
       ),
-    );
-  }
+      drawer: isMobile ? Drawer(child: _buildFilterSidebar()) : null,
+      body: isMobile
+          ? _buildSongsList()
+          : Row(
+              children: [
+                // Left Sidebar - Filters (Desktop only)
+                Container(
+                  width: 300,
+                  color: Colors.white,
+                  child: _buildFilterSidebar(),
+                ),
 
-  String _formatTime(Duration d) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(d.inMinutes.remainder(60));
-    final seconds = twoDigits(d.inSeconds.remainder(60));
-    return '$minutes:$seconds';
+                // Right Content - Songs List
+                Expanded(child: _buildSongsList()),
+              ],
+            ),
+    );
   }
 
   Widget _buildFilterSidebar() {
@@ -725,10 +600,8 @@ class _SongsListPageState extends State<SongsListPage> {
                 final actualIndex =
                     (currentPage - 1) * itemsPerPage + index + 1;
                 return SongCard(
-                  key: ValueKey(paginatedSongs[index].songId), // or unique URL
                   song: paginatedSongs[index],
                   index: actualIndex,
-                  onPlay: _playSongGlobally,
                 );
               },
             ),
@@ -797,14 +670,9 @@ class _SongsListPageState extends State<SongsListPage> {
 class SongCard extends StatefulWidget {
   final Song song;
   final int index;
-  final void Function(Song song)? onPlay;
 
-  const SongCard({
-    Key? key,
-    required this.song,
-    required this.index,
-    this.onPlay,
-  }) : super(key: key);
+  const SongCard({Key? key, required this.song, required this.index})
+    : super(key: key);
 
   @override
   State<SongCard> createState() => _SongCardState();
@@ -812,7 +680,6 @@ class SongCard extends StatefulWidget {
 
 class _SongCardState extends State<SongCard> {
   html.AudioElement? _audioElement;
-  static html.AudioElement? _currentlyPlaying;
   bool isPlaying = false;
   bool showVolumeSlider = false;
   Duration duration = Duration.zero;
@@ -822,37 +689,13 @@ class _SongCardState extends State<SongCard> {
     return url.contains('soundcloud.com');
   }
 
-  bool _isYouTube(String url) {
-    return url.contains('youtube.com') || url.contains('youtu.be');
-  }
-
-  bool _isSpotify(String url) {
-    return url.contains('spotify.com');
-  }
-
-  bool _isRaagaBox(String url) {
-    return url.contains('raagabox.com');
-  }
-
   @override
   void initState() {
     super.initState();
 
-    final links = widget.song.audioLink;
-
-    // 🔒 HARD GUARD — prevents this crash forever
-    if (links.isEmpty || links.first.trim().isEmpty) {
-      return;
-    }
-
-    final url = links.first;
-
-    // Only prepare native audio (MP3 / S3)
-    if (!_isSoundCloud(url) &&
-        !_isYouTube(url) &&
-        !_isSpotify(url) &&
-        !_isRaagaBox(url)) {
-      _audioElement = html.AudioElement(url);
+    if (widget.song.audioLink.isNotEmpty &&
+        !_isSoundCloud(widget.song.audioLink.first)) {
+      _audioElement = html.AudioElement(widget.song.audioLink.first);
       _audioElement!.volume = volume;
 
       _audioElement!.onLoadedMetadata.listen((_) {
@@ -892,9 +735,6 @@ class _SongCardState extends State<SongCard> {
 
   @override
   void dispose() {
-    if (_currentlyPlaying == _audioElement) {
-      _currentlyPlaying = null;
-    }
     _audioElement?.pause();
     _audioElement = null;
     super.dispose();
@@ -907,15 +747,18 @@ class _SongCardState extends State<SongCard> {
       if (isPlaying) {
         _audioElement!.pause();
       } else {
-        if (_currentlyPlaying != null && _currentlyPlaying != _audioElement) {
-          _currentlyPlaying!.pause();
-        }
-
         _audioElement!.play();
-        _currentlyPlaying = _audioElement;
       }
     } catch (e) {
-      debugPrint('Error playing audio: $e');
+      print('Error playing audio: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error playing audio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -1085,26 +928,10 @@ class _SongCardState extends State<SongCard> {
                   const SizedBox(height: 12),
 
                   // Audio Player
-                  if (widget.song.audioLink.isNotEmpty &&
-                      widget.song.audioLink.first.trim().isNotEmpty)
-                    Builder(
-                      builder: (context) {
-                        final url = widget.song.audioLink.first;
-
-                        if (_isSoundCloud(url)) {
-                          return _buildSoundCloudPlayer(url);
-                        } else if (_isYouTube(url)) {
-                          return _buildYouTubePlayer(url, widget.index);
-                        } else if (_isSpotify(url)) {
-                          return _buildSpotifyPlayer(url, widget.index);
-                        } else if (_isRaagaBox(url)) {
-                          return _buildRaagaBoxPlayer(url, widget.index);
-                        } else {
-                          // ONLY S3 / MP3 comes here
-                          return _buildNativeAudioPlayer();
-                        }
-                      },
-                    ),
+                  if (widget.song.audioLink.isNotEmpty)
+                    _isSoundCloud(widget.song.audioLink.first)
+                        ? _buildSoundCloudPlayer(widget.song.audioLink.first)
+                        : _buildNativeAudioPlayer(),
                 ],
               ),
             ),
@@ -1130,9 +957,7 @@ class _SongCardState extends State<SongCard> {
                   isPlaying ? Icons.pause : Icons.play_arrow,
                   color: Colors.blue[700],
                 ),
-                onPressed: () {
-                  widget.onPlay?.call(widget.song);
-                },
+                onPressed: _togglePlayPause,
               ),
               Text(
                 _formatDuration(position),
@@ -1232,56 +1057,4 @@ class _SongCardState extends State<SongCard> {
 
     return SizedBox(height: 120, child: HtmlElementView(viewType: viewType));
   }
-}
-
-Widget _buildYouTubePlayer(String url, int index) {
-  final videoId = Uri.parse(url).queryParameters['v'] ?? url.split('/').last;
-
-  final embedUrl = 'https://www.youtube.com/embed/$videoId';
-
-  final viewType = 'youtube-$index';
-
-  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
-    return html.IFrameElement()
-      ..src = embedUrl
-      ..style.border = 'none'
-      ..width = '100%'
-      ..height = '200'
-      ..allow = 'autoplay';
-  });
-
-  return SizedBox(height: 200, child: HtmlElementView(viewType: viewType));
-}
-
-Widget _buildSpotifyPlayer(String url, int index) {
-  final embedUrl = url.replaceFirst(
-    'open.spotify.com',
-    'open.spotify.com/embed',
-  );
-
-  final viewType = 'spotify-$index';
-
-  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
-    return html.IFrameElement()
-      ..src = embedUrl
-      ..style.border = 'none'
-      ..width = '100%'
-      ..height = '152';
-  });
-
-  return SizedBox(height: 152, child: HtmlElementView(viewType: viewType));
-}
-
-Widget _buildRaagaBoxPlayer(String url, int index) {
-  final viewType = 'raagabox-$index';
-
-  ui_web.platformViewRegistry.registerViewFactory(viewType, (int id) {
-    return html.IFrameElement()
-      ..src = url
-      ..style.border = 'none'
-      ..width = '100%'
-      ..height = '200';
-  });
-
-  return SizedBox(height: 200, child: HtmlElementView(viewType: viewType));
 }
